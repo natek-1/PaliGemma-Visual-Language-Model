@@ -30,7 +30,19 @@ class SiglipVisionConfig:
 
 
 class SiglipMLP(nn.Module):
-    pass
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+
+        self.fc1 = nn.Linear(config.hidden_size, config.intermediate_size)
+        self.fc2 = nn.Linear(config.intermediate_size, config.hidden_size)
+    
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        hidden_states = self.fc1(hidden_states)
+        hidden_states = nn.functional.gelu(hidden_states, approximate="tanh")
+        hidden_states = self.fc2(hidden_states)
+
+        return hidden_states
 
 class SiglipAttention(nn.Module):
     pass
@@ -41,7 +53,7 @@ class SiglipEncoder(nn.Module):
         super().__init__()
         self.embed_dim = config.hidden_size
         self.eps = config.layer_norm_eps
-        self.attention = SiglipAttention(config)
+        self.attn = SiglipAttention(config)
         self.layer_norm1 = nn.LayerNorm(self.embed_dim, eps=self.eps)
         self.mlp = SiglipMLP(config)
         self.layer_norm2 = nn.LayerNorm(self.embed_dim, eps=self.eps)
@@ -53,7 +65,7 @@ class SiglipEncoder(nn.Module):
     ) -> torch.Tensor:
         residual = hidden_state #[Batch_Size, Num_Patches, Embed_Dim]
         hidden_state = self.layer_norm1(hidden_state) #[Batch_Size, Num_Patches, Embed_Dim] -> [Batch_Size, Num_Patches, Embed_Dim]
-        hidden_state, _ = self.attention(hidden_state=hidden_state) # Batch_Size, Num_Patches, Embed_Dim]
+        hidden_state, _ = self.attn(hidden_state=hidden_state) # Batch_Size, Num_Patches, Embed_Dim]
         hidden_state = residual + hidden_state
 
         residual = hidden_state
