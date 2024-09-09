@@ -29,6 +29,41 @@ class SiglipVisionConfig:
         self.num_image_token = num_image_token
 
 
+class SiglipMLP(nn.Module):
+    pass
+
+class SiglipAttention(nn.Module):
+    pass
+
+class SiglipEncoder(nn.Module):
+    
+    def __init__(self, config: SiglipVisionConfig):
+        super().__init__()
+        self.embed_dim = config.hidden_size
+        self.eps = config.layer_norm_eps
+        self.attention = SiglipAttention(config)
+        self.layer_norm1 = nn.LayerNorm(self.embed_dim, eps=self.eps)
+        self.mlp = SiglipMLP(config)
+        self.layer_norm2 = nn.LayerNorm(self.embed_dim, eps=self.eps)
+    
+
+    def forward(
+            self,
+            hidden_state: torch.Tensor
+    ) -> torch.Tensor:
+        residual = hidden_state #[Batch_Size, Num_Patches, Embed_Dim]
+        hidden_state = self.layer_norm1(hidden_state) #[Batch_Size, Num_Patches, Embed_Dim] -> [Batch_Size, Num_Patches, Embed_Dim]
+        hidden_state, _ = self.attention(hidden_state=hidden_state) # Batch_Size, Num_Patches, Embed_Dim]
+        hidden_state = residual + hidden_state
+
+        residual = hidden_state
+        hidden_state = self.layer_norm2(hidden_state) #[Batch_Size, Num_Patches, Embed_Dim] -> [Batch_Size, Num_Patches, Embed_Dim
+        hidden_state = self.mlp(hidden_state)
+
+        hidden_state = residual + hidden_state
+        return hidden_state
+
+
 class SiglipVisionEmbeddings(nn.Module):
 
     def __init__(self, config: SiglipVisionConfig):
@@ -56,21 +91,14 @@ class SiglipVisionEmbeddings(nn.Module):
     
     def forward(self, pixel_values: torch.Tensor) -> torch.Tensor:
         _, _, height, width = pixel_values.shape #(batch_size, num_channels, height, width)
+
         # Num_Patches_H = height // patch_size and Num_Patches_W = width // patch_size
         # Num_Patches = Num_Patches_H * Num_Patches_W
         patch_embeds = self.patch_embedding(pixel_values) # (batch_size, Embed_Dim, Num_Patches_H,  Num_Patches_W)
         embeddings = patch_embeds.flatten(2) # (batch_size, Embed_Dim,Num_Patches) 
         embeddings = embeddings.transpose(1, 2) # (batch_size, Num_Patches, Embed_Dim) 
-        embeddings =  embeddings + self.position_embedding(self.position_ids) # [Batch_Size, Num_Patches, Embed_Dim]
+        embeddings =  embeddings + self.position_embedding(self.position_ids) # [Batch_Size, Num_Patches, Embed_Dim] adding learned position embedding
         return embeddings
-
-
-
-
-
-
-class SiglipEncoder(nn.Module):
-    pass
 
 
 class SiglipVisionTransformer(nn.Module):
