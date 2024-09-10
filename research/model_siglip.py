@@ -45,7 +45,47 @@ class SiglipMLP(nn.Module):
         return hidden_states
 
 class SiglipAttention(nn.Module):
-    pass
+    
+    def __init__(self, config: SiglipVisionConfig):
+        super().__init__()
+        self.config = config
+        self.embed_dim = self.config.hidden_size
+        self.num_heads = self.config.num_attention_head
+        self.head_dim = self.embed_dim // self.num_heads
+        self.scale = self.head_dim**-0.5
+        self.dropout = self.config.attention_dropout
+
+        self.k_proj = nn.Linear(self.embed_dim, self.embed_dim)
+        self.v_proj = nn.Linear(self.embed_dim, self.embed_dim)
+        self.q_proj = nn.Linear(self.embed_dim, self.embed_dim)
+        self.out_proj = nn.Lienar(self.embed_dim, self.embed_dim)
+    
+    def forward(self, hidden_states: torch.Tensor) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        batch_size, seq_len = hidden_states.size() # (batch_size, num_patches, embed_dim)
+
+        query_states = self.q_proj(hidden_states) #(batch_size, num_patches, embed_dim)
+        key_states = self.k_proj(hidden_states)#(batch_size, num_patches, embed_dim)
+        value_states = self.v_proj(hidden_states) #(batch_size, num_patches, embed_dim)
+
+        query_states = query_states.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+        key_states = key_states.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+        value_states = value_states.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+
+        attention_weights = torch.matmul(query_states, key_states.transpose(2, 3)) * self.scale # batch_size, num_heads, num_patches, num_patches
+
+
+        attention_weights = nn.functional.softmax(attention_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+        attention_weights = nn.functional.dropout(attention_weights, p=self.dropout, training=self.training)
+        attention_output = torch.matmul(attention_weights, value_states) #batch_size, num_heads, num_patches, head_dim
+
+        attention_output = attention_output.transpose(1, 2).contiguous() 
+        attention_output = attention_output.reshape(batch_size, seq_len, self.embed_dim) 
+        attention_output = self.out_proj(attention_output)
+
+        return attention_output, attention_weights
+
+
+
 
 class SiglipEncoder(nn.Module):
     
